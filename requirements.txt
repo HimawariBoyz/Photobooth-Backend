@@ -1,5 +1,5 @@
 fastapi
 uvicorn
+python-multipart
 opencv-python
-multipart
 numpy
