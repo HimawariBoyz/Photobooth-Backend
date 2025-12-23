@@ -114,6 +114,50 @@ def detect_slots_and_mask(frame_path):
     return slots, mask, image
 
 
+def fix_frame_aspect_ratio(frame_path: str, target_width: int = 1200, target_height: int = 1800):
+    if not os.path.exists(frame_path):
+        return {"error": "File not found"}
+
+    img = cv2.imread(frame_path)
+    if img is None:
+        return {"error": "Failed to load image"}
+
+    h, w = img.shape[:2]
+    
+    # Check if already correct
+    if w == target_width and h == target_height:
+        return {"status": "ok", "message": "Already correct dimensions"}
+
+    # Backup
+    backup_path = frame_path + ".bak"
+    shutil.copy2(frame_path, backup_path)
+
+    # Resize with Aspect Fill (Center Crop)
+    aspect_ratio = w / h
+    target_ratio = target_width / target_height 
+    
+    if aspect_ratio > target_ratio:
+        # Image is wider than target -> Fix Height, Crop Width
+        new_h = target_height
+        new_w = int(w * (target_height / h))
+    else:
+        # Image is taller/equal -> Fix Width, Crop Height
+        new_w = target_width
+        new_h = int(h * (target_width / w))
+        
+    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    
+    # Center Crop
+    start_x = (new_w - target_width) // 2
+    start_y = (new_h - target_height) // 2
+    
+    cropped = resized[start_y:start_y+target_height, start_x:start_x+target_width]
+    
+    cv2.imwrite(frame_path, cropped)
+    return {"status": "fixed", "original": f"{w}x{h}", "new": f"{target_width}x{target_height}"}
+
+
+
 def base_url_from_request(request: Request) -> str:
     forced = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
     if forced:
@@ -156,6 +200,16 @@ def get_frame_props(frame_id: str):
     fh, fw = img.shape[:2]
     norm_slots = [{"x": s["x"] / fw, "y": s["y"] / fh, "w": s["w"] / fw, "h": s["h"] / fh} for s in slots_data]
     return {"width": fw, "height": fh, "slots": norm_slots or []}
+
+
+@app.post("/fix-frame/{frame_id}")
+def api_fix_frame(frame_id: str):
+    frame_path = os.path.join(FRAMES_DIR, frame_id)
+    result = fix_frame_aspect_ratio(frame_path)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
 
 
 @app.post("/capture_step")
