@@ -1,5 +1,6 @@
 import os
 import glob
+import re
 import uuid
 import time
 import sys
@@ -38,6 +39,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Custom middleware to ensure CORS headers on all responses (including static files)
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 app.mount("/frames", StaticFiles(directory=FRAMES_DIR), name="frames")
 app.mount("/photos", StaticFiles(directory=UPLOAD_DIR), name="photos")
@@ -130,7 +141,7 @@ def get_frames_list(request: Request):
             if "_mask" in name:
                 continue
             frames.append({"id": name, "name": name, "url": f"{base}/frames/{name}"})
-    frames.sort(key=lambda x: x["name"].lower())
+    frames.sort(key=lambda x: [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', x["name"])])
     return frames
 
 
@@ -251,13 +262,16 @@ def merge_photos(request: Request, frame_id: str = Form(...)):
     return {"status": "success", "image_url": f"{base}/photos/{final_name}?t={time.time()}", "filename": final_name}
 
 
+
 @app.post("/print/{filename}")
 def print_photo(filename: str):
     file_path = os.path.join(UPLOAD_DIR, filename)
     if not os.path.exists(file_path):
         return JSONResponse(status_code=404, content={"status": "error", "message": "File not found"})
+    
     try:
         if sys.platform == "win32":
+            # User requested the standard Windows Print dialog
             os.startfile(file_path, "print")
         else:
             subprocess.run(["lpr", file_path], check=False)
