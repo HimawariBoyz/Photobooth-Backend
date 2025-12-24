@@ -334,6 +334,7 @@ def print_photo(filename: str):
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
+
 @app.delete("/cleanup")
 def cleanup():
     for d in (TEMP_DIR, UPLOAD_DIR):
@@ -343,3 +344,32 @@ def cleanup():
             except Exception:
                 pass
     return {"status": "cleaned"}
+
+@app.post("/print_upload")
+async def print_upload(file: UploadFile = File(...)):
+    """
+    Receives a blob/file from frontend and prints it using system default printer or specific command.
+    """
+    # Create a unique filename
+    filename = f"print_{uuid.uuid4()}.jpg"
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    
+    try:
+        # Save the file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Print logic
+        if sys.platform == "win32":
+            # Use 'print' verb to trigger silent print if default printer is set up to not ask dialogs
+            # OR better: use mspaint /p or a specific command line tool like IrfanView if available for true silent print.
+            # os.startfile(file_path, "print") opens the dialog in some viewers, prints directly in others.
+            # For true silent print on Windows without extra tools, powershell or rundll32 might be needed, 
+            # but os.startfile("print") is the standard "Ask OS to print this".
+            os.startfile(file_path, "print") 
+        else:
+            subprocess.run(["lpr", file_path], check=False)
+            
+        return {"status": "success", "message": "Sent to printer"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
